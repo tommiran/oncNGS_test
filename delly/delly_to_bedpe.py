@@ -1,4 +1,3 @@
-import pysam 
 import argparse
 
 parser = argparse.ArgumentParser(description='Script for testing command line arguments')
