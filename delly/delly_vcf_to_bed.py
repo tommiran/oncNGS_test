@@ -1,13 +1,27 @@
 import argparse
+import os
 
-parser = argparse.ArgumentParser(description='Convert VCF from delly to bedpe-format')
+parser = argparse.ArgumentParser(description='Convert VCF from delly to browser extendable format')
 parser.add_argument('-i','--input', dest='input', help='Input delly vcf')
-parser.add_argument('-f','--filter', action="store_true", dest='filter', default=False, help='Keep only variants that passed the filter')
-parser.add_argument('-o','--output', dest='output', help='Output')
+parser.add_argument('-s','--samplename', dest='samplename', help='Samplename')
+parser.add_argument('-o','--outdir', dest='outdir', help='Outdir')
 args = parser.parse_args()
 
-out = open(args.output, "w")
+'''
+Script converts the vcf-file into bed and bedpe formats : 
+1. Deletions => bed 
+2. Inversion => bed  
+3. Tandem duplication => bed
+4. Translocation => bedpe
+'''
 
+# Output 
+out_del = open(os.path.join(args.outdir, args.samplename + "_deletions.bed"), "w")
+out_inv = open(os.path.join(args.outdir, args.samplename + "_inversions.bed"), "w")
+out_dup = open(os.path.join(args.outdir, args.samplename + "_dup.bed"), "w")
+out_bnd = open(os.path.join(args.outdir, args.samplename + "_translocations.bedpe"), "w")
+
+# Iterate over input lines 
 with open(args.input) as infile:
     for ln in infile:
         if ln.startswith("#"):
@@ -38,17 +52,25 @@ with open(args.input) as infile:
             # Construct the BEDPE fields
             chrom1 = cols[chrom_idx]
             start1 = str(int(cols[pos_idx]) - 1)
-            end1 = cols[pos_idx]
+
             if svtype == "BND":
+
+                # End 
+                end1 = cols[pos_idx]
+                
+                # Chromosome 2 
                 chrom2 = info_dc["CHR2"]
-            else:
-                chrom2 = chrom1 
-            if svtype == "BND":
+
+                # Start 2
                 start2 = str(int(info_dc["POS2"]) - 1)
+
+                # End 2
                 end2 = info_dc["POS2"]
+
             else:
-                start2 = str(int(info_dc["END"]) - 1)
-                end2 = info_dc["END"]
+                
+                end1 = info_dc["END"]
+
             name = cols[id_idx]
             score = "."
             strand1 = "."
@@ -80,14 +102,31 @@ with open(args.input) as infile:
 
             # Info string 
             info = f'FILTER={filter_status},PRECISE={precise},MAPQ={mapq},SRMAPQ={srmapq},CT={CT},PE={pe},SR={sr}'
-                 
-            if args.filter == True:
-                if filter_status == "PASS":
-                    out.write("\t".join([chrom1, start1, end1, chrom2, start2, end2, name, score, strand1, strand2, svtype, info]) + "\n")
-                else:
-                    pass
-            else:
-                out.write("\t".join([chrom1, start1, end1, chrom2, start2, end2, name, score, strand1, strand2, svtype, info]) + "\n")
 
-out.close()
+            if svtype == "BND":
+                # IF SV is a translocation produce bedpe
+                out_bnd.write("\t".join([chrom1, start1, end1, 
+                                                 chrom2, start2, end2, 
+                                                 name, score, strand1, 
+                                                 strand2, svtype, info]) + "\n")
+            elif svtype == "DEL":
+                # If SV is a deletion produce bed 
+                out_del.write("\t".join([chrom1, start1, end1, 
+                                                 name, score, strand1, 
+                                                 svtype, info]) + "\n")
+                        
+            elif svtype == "DUP":
+                # If SV is duplication produce bed 
+                out_dup.write("\t".join([chrom1, start1, end1, 
+                                                 name, score, strand1, 
+                                                 svtype, info]) + "\n")
+            else:
+                # If SV is an inversion produce bed
+                out_inv.write("\t".join([chrom1, start1, end1, 
+                                                 name, score, strand1, 
+                                                 svtype, info]) + "\n")
+out_del.close()
+out_inv.close()
+out_dup.close()
+out_bnd.close()
 

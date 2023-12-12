@@ -1,8 +1,9 @@
 from intervaltree import Interval, IntervalTree
 import argparse
 
-parser = argparse.ArgumentParser(description='Annotate translocation sites')
+parser = argparse.ArgumentParser(description='Predict gene fusion events')
 parser.add_argument('-i','--input', dest='input', help='Input bedpe')
+parser.add_argument('-t','--input_type', dest='input_type', help='Input type (BED / BEDPE)')
 parser.add_argument('-g','--gtf', dest='gtf', help='Input GTF')
 parser.add_argument('-o','--output', dest='output', help='Output')
 args = parser.parse_args()
@@ -10,6 +11,7 @@ args = parser.parse_args()
 """
 Functions 
 """ 
+
 #
 # Function prepares are dictionary of genes based 
 # on the gene-features extracted from the given 
@@ -151,13 +153,14 @@ def intervalsOverlap(interval1, interval2):
         start2 = int(interval2.split(":")[1].split("-")[0])
         end2 = int(interval2.split(":")[1].split("-")[1])
 
-        if ((end2 < start1) & (start2 > end1)):
+        if ((end2 < start1) | (start2 > end1)):
             return(False)
         else:
             return(True)
     else:
         return(False)
-    
+
+
 #
 # Find all possible fusion partner-pairs
 # These genes must not overlap in the absense 
@@ -214,17 +217,37 @@ gene_database = prepareGeneDatabase(args.gtf, target_chromosomes)
 out = open(args.output, "w")
 
 # Iterate over input BEDPE file
-header = ["#CHROM","START1","END1","CHROM2","START2","END2", "SCORE", "STRAND1", "STRAND2","SVTYPE","INFO","Predicted fusions"]
+header = ["CHROM","START1","END1","CHROM2","START2","END2","NAME","SCORE", "STRAND1", "STRAND2","SVTYPE","INFO","TOTAL_SUPPORTING_READS","PREDICTED_FUSIONS"]
 out.write("\t".join(header) + "\n")
 
 with open(args.input) as infile:
     for ln in infile:
         cols = ln[:-1].split("\t")
-        chrom, start, end, chrom2, start2, end2 = cols[:6] 
-    
+        if args.input_type == "bedpe":
+            chrom, start1, end1, chrom2, start2, end2, name, score, strand1, strand2, svtype, info = cols 
+            chrom1 = chrom
+
+            # find total supporting reads = pe + sr
+            info_dc = dict([tuple(item.split("=")) for item in info.split(",")])
+            total_support = int(info_dc["SR"]) + int(info_dc["PE"])
+
+        else:
+            # If in bed format
+            chrom, start, end, name, score, strand, svtype, info = cols
+            chrom1 = chrom
+            chrom2 = chrom 
+            start1 = start 
+            end1 = str(int(start) + 1) 
+            start2 = str(int(end) - 1) 
+            end2 = end 
+
+            # find total supporting reads = pe + sr
+            info_dc = dict([tuple(item.split("=")) for item in info.split(",")])
+            total_support = int(info_dc["SR"]) + int(info_dc["PE"])
+
         # Test "left" interval 
         if chrom in target_chromosomes:
-            results_left = gene_database["intervals"][chrom][int(start):int(end)]
+            results_left = gene_database["intervals"][chrom1][int(start1):int(end1)]
         else:
             results_left = []
         
@@ -233,6 +256,8 @@ with open(args.input) as infile:
             results_right = gene_database["intervals"][chrom2][int(start2):int(end2)]
         else:
             results_right = []
+
+
         
         # Fetch all the overlapped Genes
         annotation_left = getGeneInfo(chrom, results_left, gene_database)
@@ -242,10 +267,16 @@ with open(args.input) as infile:
         # Find fusion partners 
         # The genes must not overlap in the absense of the sv
         fusion_pairs= findFusionPartners(annotation_left, annotation_right)
-    
-        if fusion_pairs != []:
-            out.write("\t".join(cols) + "\t" + ",".join(fusion_pairs) + "\n") 
+
+        if svtype == "BND":
+            # Collect SV information to list. Convert coordinates back to 1-based
+            sv_out = [chrom1, str(int(start1) + 1), end1, chrom2, str(int(start2) - 1), end2, name, score, strand1, strand2, svtype, info, str(total_support)]
+            # Write to output
+            out.write("\t".join(sv_out) +  "\t" + ",".join(fusion_pairs) + "\n")
         else:
-            pass
+            # Collect SV information to list. Convert coordinates back to 1-based
+            sv_out = [chrom, str(int(start) + 1), end, "", "", "",name, score, strand, "", svtype, info, str(total_support)]
+            # Write to output
+            out.write("\t".join(sv_out) + "\t" + ",".join(fusion_pairs) + "\n")
     
 out.close()
