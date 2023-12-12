@@ -3,7 +3,6 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Predict gene fusion events')
 parser.add_argument('-i','--input', dest='input', help='Input bedpe')
-parser.add_argument('-t','--input_type', dest='input_type', help='Input type (BED / BEDPE)')
 parser.add_argument('-g','--gtf', dest='gtf', help='Input GTF')
 parser.add_argument('-o','--output', dest='output', help='Output')
 args = parser.parse_args()
@@ -220,10 +219,17 @@ out = open(args.output, "w")
 header = ["CHROM","START1","END1","CHROM2","START2","END2","NAME","SCORE", "STRAND1", "STRAND2","SVTYPE","INFO","TOTAL_SUPPORTING_READS","PREDICTED_FUSIONS"]
 out.write("\t".join(header) + "\n")
 
+# Infer the input type 
+input_type = ""
+if args.input.endswith(".bed"):
+    input_type = "bed"
+else:
+    input_type = "bedpe"
+
 with open(args.input) as infile:
     for ln in infile:
         cols = ln[:-1].split("\t")
-        if args.input_type == "bedpe":
+        if input_type == "bedpe":
             chrom, start1, end1, chrom2, start2, end2, name, score, strand1, strand2, svtype, info = cols 
             chrom1 = chrom
 
